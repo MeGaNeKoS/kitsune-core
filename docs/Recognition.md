@@ -36,7 +36,7 @@ class RecognitionResult(TypedDict, total=False):
     release_group: Optional[str]   # fansub/release group
     video_resolution: Optional[str] # e.g. "1080p", "720p"
     source: str                    # which recognizer produced this ("aniparse", "llm")
-    raw: dict                      # full unprocessed output
+    raw: dict                      # full unprocessed output from the underlying parser
 ```
 
 ## Implementations
@@ -44,21 +44,58 @@ class RecognitionResult(TypedDict, total=False):
 ### Aniparse Recognizer
 
 **Extra:** `recognition`
+**Requires:** [aniparse](https://pypi.org/project/aniparse/) 2.0+
 
-Uses the [aniparse](https://pypi.org/project/aniparse/) library to extract metadata from anime filenames. Fast, deterministic, no network calls. Works well for standard fansub naming conventions.
+Uses aniparse to extract metadata from anime filenames. Fast, deterministic, no network calls. Works well for standard fansub naming conventions.
 
 **Example:**
 ```
-Input:  "[SubsPlease] Frieren - Beyond Journey's End - 01 (1080p) [hash].mkv"
-Output: {
-    "anime_title": "Frieren - Beyond Journey's End",
-    "episode_number": 1,
-    "video_resolution": "1080p",
+Input:  "[SubsPlease] Sousou no Frieren - 18 (1080p) [ABC123].mkv"
+
+Output (RecognitionResult):
+{
+    "anime_title": "Sousou no Frieren",
+    "episode_number": 18,
+    "season_number": null,
     "release_group": "SubsPlease",
+    "video_resolution": "1080p",
     "source": "aniparse",
     "raw": { ... }
 }
 ```
+
+**Aniparse 2.0 raw output structure:**
+
+The `raw` field contains the native aniparse 2.0 output, which uses a nested format:
+
+```json
+{
+    "file_name": "[SubsPlease] Sousou no Frieren - 18 (1080p) [ABC123].mkv",
+    "file_extension": "mkv",
+    "video_resolution": [
+        {"video_height": 1080, "scan_method": "p"}
+    ],
+    "release_group": ["SubsPlease"],
+    "series": [
+        {
+            "title": "Sousou no Frieren",
+            "episode": [
+                {"number": 18}
+            ]
+        }
+    ],
+    "_confidence": 0.582
+}
+```
+
+Key differences from aniparse 1.x:
+- `series` is a list of objects (supports multi-series filenames)
+- `episode` is nested under each series entry
+- `video_resolution` is a list of objects with `video_height` and `scan_method`
+- `release_group` is a list
+- `_confidence` score is included
+
+The `AniparseRecognizer` normalizes this into the flat `RecognitionResult` format.
 
 ### LLM Recognizer
 
@@ -72,6 +109,24 @@ The LLM recognizer sends the title to the configured LLM endpoint with a structu
 - Titles with non-standard formatting
 - Batch renaming with inconsistent patterns
 - When contextual knowledge is needed (e.g., knowing "S2" refers to a specific sequel)
+- Streaming page titles (e.g., "Watch Frieren Episode 5 - Crunchyroll")
+
+**Example:**
+```
+Input:  "Sousou no Frieren S01E05 The Hero's Party Sets Out 1080p WEB-DL"
+
+Prompt sent to LLM:
+  "Parse this anime filename/title into structured JSON..."
+
+Output:
+{
+    "anime_title": "Sousou no Frieren",
+    "episode_number": 5,
+    "season_number": 1,
+    "source": "llm",
+    "raw": { ... }
+}
+```
 
 ## Implementing a New Recognizer
 
@@ -101,7 +156,16 @@ from core.recognition import get_recognizer
 
 # Use aniparse (default)
 recognizer = get_recognizer("aniparse")
+result = recognizer.parse("[SubsPlease] Frieren - 05 (1080p).mkv")
+print(result["anime_title"])  # "Frieren"
 
 # Use LLM
-recognizer = get_recognizer("llm", endpoint="http://localhost:8080/v1")
+recognizer = get_recognizer("llm", base_url="http://localhost:11434/v1", model="llama3")
+result = recognizer.parse("Watch Frieren Episode 5 on Crunchyroll")
+
+# Parse multiple titles at once
+results = recognizer.parse_batch([
+    "[SubsPlease] Frieren - 01 (1080p).mkv",
+    "[SubsPlease] Frieren - 02 (1080p).mkv",
+])
 ```

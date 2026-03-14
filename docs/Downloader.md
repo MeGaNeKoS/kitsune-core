@@ -5,42 +5,164 @@ The downloader module handles RSS feed monitoring and torrent client management 
 ## Architecture
 
 ```
-RSS Feed ──► RSSRuleParser ──► Queue ──► Download Orchestrator ──► Torrent Client
-                                              │
-                                         ┌────┴─────┐
-                                         │BaseClient│
-                                         └────┬─────┘
-                                              │
-                                         QBittorrent
-                                      (future: Transmission, Deluge)
+RSS Feed ──► Extractor (find download links)
+           ──► Matcher (should I download this?)
+           ──► Recognizer (parse anime title)
+           ──► Queue ──► Download Orchestrator ──► Torrent Client
+                                │
+                           ┌────┴─────┐
+                           │BaseClient│
+                           └────┬─────┘
+                                │
+                           QBittorrent
+                        (future: Transmission, Deluge)
 ```
 
-## Components
+## RSS Pipeline
 
-### RSS Parser
+The RSS system is split into independent, testable components.
 
-**File:** `core/rss/rule_parser.py` → `RSSRuleParser`
+### Step 1: Extractor — "Where are the download links?"
 
-Monitors RSS feeds and extracts torrent links (magnet, .torrent, info hash) using configurable per-service parsing rules.
+**Interface:** `core/interfaces/rss/extractor.py` → `BaseExtractor`
+**Implementation:** `core/rss/extractor.py` → `Extractor`
 
-**Configuration format:**
-```json
-{
-    "nyaa.si": {
-        "magnet": {
-            "fields": [
-                {
-                    "field": "link",
-                    "pattern": "magnet:\\?xt=urn:btih:.*",
-                    "sub_fields": []
-                }
-            ]
-        }
-    }
-}
+Extracts magnet links, torrent URLs, and info hashes from RSS feed entries.
+
+**ExtractionRule** — declarative config per RSS source:
+
+```python
+from core.interfaces.rss import ExtractionRule
+
+# Tell the extractor where nyaa.si puts its magnet links
+rule = ExtractionRule(
+    source="nyaa.si",
+    magnet="link",              # RSS <link> contains the magnet
+    info_hash="nyaa:infoHash",  # custom namespace field
+)
 ```
 
-### Download Orchestrator
+Use dot notation for nested fields: `"links.0.href"`
+
+If no rule matches, the extractor falls back to **regex auto-detection** — it scans the entire entry for magnet/torrent patterns. Most RSS feeds work fine with just the fallback.
+
+**FeedEntry** — clean return type:
+
+```python
+@dataclass
+class FeedEntry:
+    title: str                          # entry title
+    magnet_links: list[str] = []        # found magnet links
+    info_hashes: list[str] = []         # found info hashes
+    torrent_links: list[str] = []       # found .torrent URLs
+    raw: dict = {}                      # original RSS entry
+```
+
+### Step 2: Matcher — "Should I download this?"
+
+**Interface:** `core/interfaces/rss/matcher.py` → `BaseMatcher`
+**Implementations:**
+- `core/rss/matcher.py` → `RuleMatcher` (regex-based)
+- `core/rss/matcher.py` → `LLMMatcher` (LLM-based)
+
+#### RuleMatcher
+
+All non-empty fields must match. Leave a field empty to skip that check.
+
+```python
+from core.interfaces.rss import MatchRule
+from core.rss.matcher import RuleMatcher
+
+matcher = RuleMatcher([
+    # Download Frieren in 1080p from SubsPlease only
+    MatchRule(
+        title_pattern=r"Frieren",
+        resolution=["1080p"],
+        release_group=["SubsPlease"],
+    ),
+    # Download Dandadan episodes 1-12, skip batches
+    MatchRule(
+        title_pattern=r"Dandadan",
+        exclude_pattern=r"batch|complete",
+        episode_range=(1, 12),
+    ),
+])
+```
+
+**MatchRule fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `title_pattern` | str | Regex to match title (case-insensitive) |
+| `exclude_pattern` | str | Regex to reject title |
+| `resolution` | list[str] | e.g. `["1080p", "720p"]` |
+| `release_group` | list[str] | e.g. `["SubsPlease", "Erai-raws"]` |
+| `episode_range` | tuple[int, int] | `(start, end)` inclusive |
+
+Multiple rules = OR logic (any rule matching is enough).
+
+#### LLMMatcher
+
+Natural language rules evaluated by an LLM endpoint:
+
+```python
+from core.interfaces.rss import LLMMatchRule
+from core.rss.matcher import LLMMatcher
+from core.llm import get_llm_client
+
+matcher = LLMMatcher(
+    rule=LLMMatchRule(
+        prompt="Download only 1080p releases from trusted groups "
+               "(SubsPlease, Erai-raws). Skip batch releases and re-encodes."
+    ),
+    llm_client=get_llm_client(),
+)
+```
+
+### Step 3: Recognizer — "What anime is this?"
+
+Uses the [Recognition module](Recognition.md) to parse the anime title from the filename. Optional — if not provided, raw title metadata is passed to the queue.
+
+### Step 4: Queue
+
+Matched entries are wrapped in `TorrentInfo` and enqueued for the download orchestrator.
+
+## RSS Orchestrator
+
+**File:** `core/rss/__init__.py` → `RSS`
+
+Ties the pipeline together and runs on an interval:
+
+```python
+from core.rss import RSS
+from core.rss.extractor import Extractor
+from core.rss.matcher import RuleMatcher
+from core.interfaces.rss import ExtractionRule, MatchRule
+from core.recognition import get_recognizer
+from core.collection.queue import QueueManager
+
+rss = RSS(
+    extractor=Extractor([
+        ExtractionRule(source="nyaa.si", magnet="link"),
+    ]),
+    matcher=RuleMatcher([
+        MatchRule(title_pattern=r"Frieren", resolution=["1080p"]),
+    ]),
+    queue_manager=QueueManager(),
+    config={
+        "check_interval_second": 600,
+        "watch_list": {
+            "frieren.log": "https://nyaa.si/?page=rss&q=frieren+1080p",
+        },
+    },
+    recognizer=get_recognizer("aniparse"),
+)
+
+# Call periodically
+rss.step()  # checks feeds if interval has elapsed
+```
+
+## Download Orchestrator
 
 **File:** `core/downloader/__init__.py` → `Download`
 
@@ -60,7 +182,7 @@ Manages the download lifecycle:
 | `queue` | str | "default" | Named queue to use |
 | `client` | dict | {} | Torrent client config (see below) |
 
-### Torrent Client
+## Torrent Client
 
 **Interface:** `core/interfaces/torrent/client/base.py` → `BaseClient`
 
