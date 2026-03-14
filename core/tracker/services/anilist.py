@@ -1,5 +1,5 @@
 """
-AniList service tracker — thin adapter wrapping core.service.anilist.
+AniList service tracker — uses the anisearch library.
 """
 
 import logging
@@ -10,9 +10,9 @@ from devlog import log_on_start, log_on_error
 from core.features import require
 
 require("tracker")
+import Anisearch
 
 from core.interfaces.tracker.service import BaseServiceTracker
-from core.service.anilist import AnilistAuthClient, AnilistClient
 
 logger = logging.getLogger(__name__)
 
@@ -20,93 +20,157 @@ logger = logging.getLogger(__name__)
 class AnilistTracker(BaseServiceTracker):
     _name = "anilist"
 
-    def __init__(self, session=None, **kwargs):
-        self._session = session
-        self._access_token = kwargs.get("access_token")
+    def __init__(self, access_token: str = "", **kwargs):
+        self._client = Anisearch.Anilist()
+        if access_token:
+            self._client.set_token(access_token)
 
     @log_on_start(logging.INFO, "Authenticating with AniList...")
     @log_on_error(logging.ERROR, "AniList authentication failed: {error!r}",
-                  sanitize_params={"client_secret", "code"})
+                  sanitize_params={"access_token"})
     def authenticate(self, **kwargs) -> bool:
-        client_id = kwargs.get("client_id")
-        client_secret = kwargs.get("client_secret")
-
-        if client_id:
-            AnilistAuthClient.set_client_id(client_id)
-        if client_secret:
-            AnilistAuthClient.set_client_secret(client_secret)
-
         if "access_token" in kwargs:
-            self._access_token = kwargs["access_token"]
-            return True
-
-        if "code" in kwargs:
-            token_data = AnilistAuthClient.fetch_token(kwargs["code"])
-            self._access_token = token_data.get("access_token")
-            return self._access_token is not None
-
-        # Interactive auth
-        auth_url = AnilistAuthClient.generate_auth_url(auth_code=bool(client_secret))
-        thread, token_container = AnilistClient.authenticate_user(auth_url)
-        thread.join()
-        if token_container.token:
-            self._access_token = token_container.token.get("access_token")
-            return self._access_token is not None
+            self._client.set_token(kwargs["access_token"])
+            # Verify by fetching viewer
+            try:
+                self._client.raw_query("query { Viewer { id } }")
+                return True
+            except Exception:
+                return False
         return False
 
-    @log_on_error(logging.ERROR, "Failed to fetch AniList user list: {error!r}",
-                  sanitize_params={"access_token"})
+    @log_on_error(logging.ERROR, "Failed to fetch AniList user list: {error!r}")
     def get_user_list(self, user_id: str,
                       status: Optional[str] = None) -> list[dict]:
-        if not self._session:
-            raise RuntimeError("Database session required for get_user_list")
-
-        creds = AnilistClient.fetch_user_media_list(
-            session=self._session,
-            access_token=self._access_token,
-            user_id=int(user_id),
-        )
-        return creds if isinstance(creds, list) else []
+        try:
+            result = (self._client.media(id_in=[])
+                      .page(per_page=50)
+                      .id().title().episodes().status().average_score()
+                      .execute())
+            # For user-specific lists, use raw query
+            query = """
+            query ($userId: Int, $page: Int) {
+                Page(page: $page, perPage: 50) {
+                    mediaList(userId: $userId, type: ANIME) {
+                        mediaId
+                        progress
+                        status
+                        score
+                        media { id title { romaji english } episodes }
+                    }
+                }
+            }
+            """
+            response = self._client.raw_query(query, {"userId": int(user_id), "page": 1})
+            entries = response.get("data", {}).get("Page", {}).get("mediaList", [])
+            results = []
+            for entry in entries:
+                media = entry.get("media", {})
+                title = media.get("title", {})
+                results.append({
+                    "id": entry.get("mediaId"),
+                    "title": title.get("english") or title.get("romaji") or "",
+                    "progress": entry.get("progress", 0),
+                    "status": entry.get("status"),
+                    "score": entry.get("score"),
+                    "episodes": media.get("episodes"),
+                })
+            return results
+        except Exception as e:
+            logger.error(f"Failed to fetch user list: {e}")
+            return []
 
     @log_on_error(logging.ERROR, "Failed to fetch AniList media: {error!r}")
     def get_media(self, media_id: str) -> dict:
-        results = AnilistClient.fetch_media_entry(media_ids=[int(media_id)])
-        if results:
-            return results[0] if isinstance(results, list) else results
-        return {}
+        result = (self._client.media(id=int(media_id))
+                  .id().title().episodes().status()
+                  .average_score().mean_score()
+                  .season().season_year()
+                  .genres().format()
+                  .description().cover_image()
+                  .studios()
+                  .execute())
+        return _media_to_dict(result)
 
     @log_on_error(logging.ERROR, "Failed to search AniList: {error!r}")
     def search_media(self, query: str) -> list[dict]:
-        results = AnilistClient.fetch_media_entry(search=query)
-        return results if isinstance(results, list) else []
+        result = (self._client.media(search=query)
+                  .page(per_page=10)
+                  .id().title().episodes().status()
+                  .average_score().format()
+                  .execute())
+        # PageResult has .items list
+        if hasattr(result, 'items'):
+            return [_media_to_dict(m) for m in result.items]
+        # Single Media result
+        if hasattr(result, 'id'):
+            return [_media_to_dict(result)]
+        return []
 
     @log_on_error(logging.ERROR, "Failed to update AniList entry: {error!r}",
                   sanitize_params={"access_token"})
     def update_entry(self, media_id: str, progress: int,
                      status: Optional[str] = None,
                      score: Optional[float] = None) -> bool:
-        variables = {
-            "mediaId": int(media_id),
-            "progress": progress,
-        }
+        kwargs = {"media_id": int(media_id), "progress": progress}
         if status:
-            variables["status"] = status
+            kwargs["status"] = status
         if score is not None:
-            variables["score"] = score
+            kwargs["score"] = score
+        try:
+            self._client.save_media_list_entry(**kwargs)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to update entry: {e}")
+            return False
 
-        query = """
-        mutation ($mediaId: Int, $status: MediaListStatus, $progress: Int, $score: Float) {
-            SaveMediaListEntry(mediaId: $mediaId, status: $status, progress: $progress, score: $score) {
-                id
-                progress
-                status
-            }
-        }
-        """
-        result = AnilistClient._send_graphql_request(self._access_token, query, variables)
-        return "errors" not in result
-
-    @log_on_error(logging.ERROR, "Failed to delete AniList entry: {error!r}",
-                  sanitize_params={"access_token"})
+    @log_on_error(logging.ERROR, "Failed to delete AniList entry: {error!r}")
     def delete_entry(self, media_id: str) -> bool:
-        return AnilistClient._delete_entry(self._access_token, int(media_id))
+        try:
+            self._client.delete_media_list_entry(id=int(media_id))
+            return True
+        except Exception as e:
+            logger.error(f"Failed to delete entry: {e}")
+            return False
+
+
+def _media_to_dict(media) -> dict:
+    """Convert anisearch Media object to a plain dict."""
+    result = {"id": getattr(media, 'id', None)}
+
+    title = getattr(media, 'title', None)
+    if title:
+        result["title"] = {
+            "romaji": getattr(title, 'romaji', None),
+            "english": getattr(title, 'english', None),
+            "native": getattr(title, 'native', None),
+        }
+        result["title_display"] = (getattr(title, 'english', None)
+                                   or getattr(title, 'romaji', None)
+                                   or "")
+    else:
+        result["title"] = {}
+        result["title_display"] = ""
+
+    result["episodes"] = getattr(media, 'episodes', None)
+    result["status"] = getattr(media, 'status', None)
+    result["average_score"] = getattr(media, 'average_score', None)
+    result["mean_score"] = getattr(media, 'mean_score', None)
+    result["format"] = getattr(media, 'format', None)
+    result["season"] = getattr(media, 'season', None)
+    result["season_year"] = getattr(media, 'season_year', None)
+    result["genres"] = getattr(media, 'genres', None)
+    result["description"] = getattr(media, 'description', None)
+
+    cover = getattr(media, 'cover_image', None)
+    if cover:
+        result["cover_image"] = {
+            "large": getattr(cover, 'large', None),
+            "medium": getattr(cover, 'medium', None),
+        }
+
+    studios = getattr(media, 'studios', None)
+    if studios and hasattr(studios, 'nodes'):
+        result["studios"] = [getattr(s, 'name', '') for s in studios.nodes]
+
+    return result

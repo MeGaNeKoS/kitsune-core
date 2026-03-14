@@ -330,7 +330,7 @@ class AnilistClient:
     '''.strip()
 
     _get_media_entry = f'''
-    query ($ids: [Int], $page: Int, $perPage: Int, $season: MediaSeason, $seasonYear: Int) {{
+    query ($ids: [Int], $search: String, $page: Int, $perPage: Int, $season: MediaSeason, $seasonYear: Int) {{
         Page(page: $page, perPage: $perPage) {{
             pageInfo {{
                 total
@@ -338,7 +338,7 @@ class AnilistClient:
                 perPage
                 hasNextPage
             }}
-            media(id_in: $ids, season: $season, seasonYear: $seasonYear) {{
+            media(id_in: $ids, search: $search, season: $season, seasonYear: $seasonYear) {{
                 ...{QueryNames.MediaFragmentName.value}
             }}
         }}
