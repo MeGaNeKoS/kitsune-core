@@ -16,7 +16,7 @@ from devlog import log_on_start, log_on_end, log_on_error
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.operators import gt
 
-import env
+from core import env
 from core.error.service.anilist import AnilistUserNoMediaCollectionError, AnilistUserNotFoundError, AnilistMediaNotFoundError, AnilistNoUserError, \
     AnilistNoRefreshUserError
 from core.error.server import ServerRunningError, ClientSecretNotProvidedError, ServerFailedToStartError
@@ -74,9 +74,9 @@ class AnilistAuthClient:
     Returns:
         The methods of this class return various types depending on their function, including None, str, threading.Thread, and dict.
     """
-    CLIENT_ID = env.ANILIST_CLIENT_ID
-    CLIENT_SECRET = env.ANILIST_CLIENT_SECRET
-    REDIRECT_URI = env.ANILIST_REDIRECT_URI
+    CLIENT_ID = env.get("ANILIST_CLIENT_ID")
+    CLIENT_SECRET = env.get("ANILIST_CLIENT_SECRET")
+    REDIRECT_URI = env.get("ANILIST_REDIRECT_URI", "http://localhost:8000")
     AUTH_URL = 'https://anilist.co/api/v2/oauth/authorize'
     TOKEN_URL = 'https://anilist.co/api/v2/oauth/token'
 

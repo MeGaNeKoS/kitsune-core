@@ -17,7 +17,7 @@ build/
 
 # Environment
 .env
-env.py
+/env.py
 
 # Logs
 crash.log
