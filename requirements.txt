@@ -1,0 +1,7 @@
+SQLAlchemy~=2.0.27
+psutil~=5.9.8
+qbittorrent-api~=2024.1.58
+feedparser~=6.0.11
+urllib3~=2.2.1
+requests~=2.31.0
+aniparse~=1.2.2

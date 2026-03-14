@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kitsune-core"
+version = "0.1.0"
+description = "Anime tracking and download automation core library"
+requires-python = ">=3.10"
+
+dependencies = [
+    "python-devlog~=2.1.1",
+    "SQLAlchemy~=2.0.27",
+    "urllib3~=2.2.1",
+]
+
+[project.optional-dependencies]
+tracker = [
+    "anisearch~=3.0.0",
+]
+recognition = [
+    "aniparse~=2.0.0",
+]
+downloader = [
+    "feedparser~=6.0.11",
+    "qbittorrent-api~=2024.1.58",
+    "psutil~=5.9.8",
+]
+detection = [
+    "psutil~=5.9.8",
+]
+llm = [
+    "httpx>=0.27",
+]
+server = [
+    "uvicorn>=0.29",
+    "fastapi>=0.111",
+]
+all = [
+    "kitsune-core[tracker,recognition,downloader,detection,llm,server]",
+]
+
+[tool.setuptools.packages.find]
+include = ["core*"]
