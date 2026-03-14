@@ -44,7 +44,7 @@ class LocalTracker(BaseLocalTracker):
         }
 
     def _get_entry_or_raise(self, media_id: int) -> LocalMedia:
-        entry = self._session.query(LocalMedia).get(media_id)
+        entry = self._session.get(LocalMedia, media_id)
         if not entry:
             raise ValueError(f"Media entry {media_id} not found")
         return entry
@@ -96,7 +96,7 @@ class LocalTracker(BaseLocalTracker):
         return self._to_dict(entry)
 
     def delete_entry(self, media_id: int) -> bool:
-        entry = self._session.query(LocalMedia).get(media_id)
+        entry = self._session.get(LocalMedia, media_id)
         if not entry:
             return False
         self._session.delete(entry)

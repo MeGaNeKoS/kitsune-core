@@ -43,5 +43,8 @@ all = [
     "kitsune-core[tracker,recognition,downloader,detection,media,llm,server]",
 ]
 
+[project.scripts]
+kitsune = "core.cli:main"
+
 [tool.setuptools.packages.find]
 include = ["core*"]
