@@ -207,9 +207,12 @@ def cmd_server_start(args):
     from core.features import require
     require("server")
     from core.server.app import configure_db, app
+    from core.server.auth import configure_auth
     import uvicorn
 
     configure_db(args.db)
+    if args.api_key:
+        configure_auth(api_key=args.api_key)
     print(f"Starting kitsune-core server on {args.host}:{args.port}")
     uvicorn.run(app, host=args.host, port=args.port)
 
@@ -286,6 +289,7 @@ def build_parser() -> argparse.ArgumentParser:
     s_start = srv_sub.add_parser("start", help="Start server")
     s_start.add_argument("--host", default="127.0.0.1")
     s_start.add_argument("--port", type=int, default=8000)
+    s_start.add_argument("--api-key", help="Require API key for all requests")
 
     # --- features ---
     sub.add_parser("features", help="List installed features")

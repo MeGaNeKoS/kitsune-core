@@ -31,6 +31,7 @@ class AniDBTracker(BaseServiceTracker):
         self._clientver = clientver
         self._username = username
         self._password = password
+        self._udp = None  # lazy init
 
     def _base_params(self) -> dict:
         params = {
@@ -55,6 +56,15 @@ class AniDBTracker(BaseServiceTracker):
             raise RuntimeError(f"AniDB API error {response.status}")
         return ElementTree.fromstring(response.data)
 
+    def _get_udp(self):
+        """Lazy-init UDP client and authenticate."""
+        if self._udp is None:
+            from core.tracker.services.anidb_udp import AniDBUDPClient
+            self._udp = AniDBUDPClient(self._client, self._clientver)
+        if not self._udp.is_authenticated and self._username and self._password:
+            self._udp.auth(self._username, self._password)
+        return self._udp
+
     @log_on_error(logging.ERROR, "AniDB authentication failed: {error!r}",
                   sanitize_params={"password"})
     def authenticate(self, **kwargs) -> bool:
@@ -64,6 +74,9 @@ class AniDBTracker(BaseServiceTracker):
             self._password = kwargs["password"]
         if "client" in kwargs:
             self._client = kwargs["client"]
+        if self._username and self._password:
+            udp = self._get_udp()
+            return udp.is_authenticated
         return bool(self._username and self._client)
 
     @log_on_error(logging.ERROR, "Failed to fetch AniDB user list: {error!r}")
@@ -106,14 +119,27 @@ class AniDBTracker(BaseServiceTracker):
                        "Use anime-titles dump for local search.")
         return []
 
+    @log_on_error(logging.ERROR, "Failed to update AniDB entry: {error!r}",
+                  sanitize_params={"password"})
     def update_entry(self, media_id: str, progress: int,
                      status: Optional[str] = None,
                      score: Optional[float] = None) -> bool:
-        logger.warning("AniDB HTTP API is read-only. "
-                       "Write operations require the UDP API.")
-        return False
+        """Update mylist entry via UDP API. Marks episodes as viewed."""
+        udp = self._get_udp()
+        if not udp.is_authenticated:
+            logger.error("AniDB UDP not authenticated")
+            return False
+
+        # Mark each episode up to progress as viewed
+        for ep in range(1, progress + 1):
+            code, msg = udp.mylist_add(
+                aid=int(media_id), epno=ep, viewed=True, edit=True
+            )
+            if code not in (210, 310, 311):
+                # 210=MYLIST ENTRY ADDED, 310=FILE ALREADY IN MYLIST, 311=MYLIST ENTRY EDITED
+                logger.warning(f"AniDB mylist_add ep={ep}: {code} {msg}")
+        return True
 
     def delete_entry(self, media_id: str) -> bool:
-        logger.warning("AniDB HTTP API is read-only. "
-                       "Write operations require the UDP API.")
+        logger.warning("AniDB UDP API does not support bulk mylist deletion.")
         return False
