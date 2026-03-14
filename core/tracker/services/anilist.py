@@ -11,10 +11,16 @@ from core.features import require
 
 require("tracker")
 import Anisearch
+from Anisearch import Media, StudioEdge
+from Anisearch.models.shared import PageResult
 
 from core.interfaces.tracker.service import BaseServiceTracker
 
 logger = logging.getLogger(__name__)
+
+
+def _studio_fields(builder):
+    return builder.name().is_animation_studio()
 
 
 class AnilistTracker(BaseServiceTracker):
@@ -31,7 +37,6 @@ class AnilistTracker(BaseServiceTracker):
     def authenticate(self, **kwargs) -> bool:
         if "access_token" in kwargs:
             self._client.set_token(kwargs["access_token"])
-            # Verify by fetching viewer
             try:
                 self._client.raw_query("query { Viewer { id } }")
                 return True
@@ -42,25 +47,20 @@ class AnilistTracker(BaseServiceTracker):
     @log_on_error(logging.ERROR, "Failed to fetch AniList user list: {error!r}")
     def get_user_list(self, user_id: str,
                       status: Optional[str] = None) -> list[dict]:
-        try:
-            result = (self._client.media(id_in=[])
-                      .page(per_page=50)
-                      .id().title().episodes().status().average_score()
-                      .execute())
-            # For user-specific lists, use raw query
-            query = """
-            query ($userId: Int, $page: Int) {
-                Page(page: $page, perPage: 50) {
-                    mediaList(userId: $userId, type: ANIME) {
-                        mediaId
-                        progress
-                        status
-                        score
-                        media { id title { romaji english } episodes }
-                    }
+        query = """
+        query ($userId: Int, $page: Int) {
+            Page(page: $page, perPage: 50) {
+                mediaList(userId: $userId, type: ANIME) {
+                    mediaId
+                    progress
+                    status
+                    score
+                    media { id title { romaji english } episodes }
                 }
             }
-            """
+        }
+        """
+        try:
             response = self._client.raw_query(query, {"userId": int(user_id), "page": 1})
             entries = response.get("data", {}).get("Page", {}).get("mediaList", [])
             results = []
@@ -88,7 +88,7 @@ class AnilistTracker(BaseServiceTracker):
                   .season().season_year()
                   .genres().format()
                   .description().cover_image()
-                  .studios()
+                  .studios(fields=_studio_fields)
                   .execute())
         return _media_to_dict(result)
 
@@ -99,11 +99,9 @@ class AnilistTracker(BaseServiceTracker):
                   .id().title().episodes().status()
                   .average_score().format()
                   .execute())
-        # PageResult has .items list
-        if hasattr(result, 'items'):
+        if isinstance(result, PageResult):
             return [_media_to_dict(m) for m in result.items]
-        # Single Media result
-        if hasattr(result, 'id'):
+        if isinstance(result, Media):
             return [_media_to_dict(result)]
         return []
 
@@ -134,43 +132,46 @@ class AnilistTracker(BaseServiceTracker):
             return False
 
 
-def _media_to_dict(media) -> dict:
-    """Convert anisearch Media object to a plain dict."""
-    result = {"id": getattr(media, 'id', None)}
-
-    title = getattr(media, 'title', None)
+def _media_to_dict(media: Media) -> dict:
+    """Convert anisearch Media dataclass to a plain dict."""
+    title = media.title
+    title_dict = {}
+    title_display = ""
     if title:
-        result["title"] = {
-            "romaji": getattr(title, 'romaji', None),
-            "english": getattr(title, 'english', None),
-            "native": getattr(title, 'native', None),
+        title_dict = {
+            "romaji": title.romaji,
+            "english": title.english,
+            "native": title.native,
         }
-        result["title_display"] = (getattr(title, 'english', None)
-                                   or getattr(title, 'romaji', None)
-                                   or "")
-    else:
-        result["title"] = {}
-        result["title_display"] = ""
+        title_display = title.english or title.romaji or ""
 
-    result["episodes"] = getattr(media, 'episodes', None)
-    result["status"] = getattr(media, 'status', None)
-    result["average_score"] = getattr(media, 'average_score', None)
-    result["mean_score"] = getattr(media, 'mean_score', None)
-    result["format"] = getattr(media, 'format', None)
-    result["season"] = getattr(media, 'season', None)
-    result["season_year"] = getattr(media, 'season_year', None)
-    result["genres"] = getattr(media, 'genres', None)
-    result["description"] = getattr(media, 'description', None)
+    result = {
+        "id": media.id,
+        "title": title_dict,
+        "title_display": title_display,
+        "episodes": media.episodes,
+        "status": media.status,
+        "average_score": media.average_score,
+        "mean_score": media.mean_score,
+        "format": media.format,
+        "season": media.season,
+        "season_year": media.season_year,
+        "genres": media.genres,
+        "description": media.description,
+    }
 
-    cover = getattr(media, 'cover_image', None)
-    if cover:
+    if media.cover_image:
         result["cover_image"] = {
-            "large": getattr(cover, 'large', None),
-            "medium": getattr(cover, 'medium', None),
+            "large": media.cover_image.large,
+            "medium": media.cover_image.medium,
         }
 
-    studios = getattr(media, 'studios', None)
-    if studios and hasattr(studios, 'nodes'):
-        result["studios"] = [getattr(s, 'name', '') for s in studios.nodes]
+    if media.studios:
+        result["studios"] = [
+            {"name": edge.node.name, "is_main": edge.is_main,
+             "is_animation_studio": edge.node.is_animation_studio}
+            for edge in media.studios
+            if isinstance(edge, StudioEdge) and edge.node
+        ]
 
     return result
