@@ -6,7 +6,9 @@ def get_llm_client(name: str = "openai", **kwargs) -> BaseLLMClient:
     clients = {}
     if is_available("llm"):
         from core.llm.openai_compatible import OpenAICompatibleClient
+        from core.llm.gemini import GeminiClient
         clients[OpenAICompatibleClient.get_name()] = OpenAICompatibleClient
+        clients[GeminiClient.get_name()] = GeminiClient
 
     client_cls = clients.get(name)
     if client_cls:
