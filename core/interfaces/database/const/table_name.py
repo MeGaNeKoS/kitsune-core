@@ -9,5 +9,5 @@ class TableNames(enum.Enum):
     AnilistMediaTitle = f"{Anilist_Prefix}MediaTitle"
     AnilistUser = f"{Anilist_Prefix}User"
     ServiceCreds = "ServiceCreds"
-    MediaRelations = "MediaRelations"
+    ServiceMediaMapping = "ServiceMediaMapping"
     LocalMedia = "LocalMedia"
