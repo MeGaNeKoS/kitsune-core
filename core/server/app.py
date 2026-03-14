@@ -96,19 +96,17 @@ class ServiceSyncRequest(BaseModel):
     access_token: str = ""
 
 
-class RSSFeedAddRequest(BaseModel):
-    url: str
-    name: str  # log file identifier
-
-
 class RSSParseRequest(BaseModel):
     url: str
-    rules: Optional[dict] = None
 
 
-class DownloadAddRequest(BaseModel):
-    urls: list[str]  # magnet links or torrent URLs
-    title: str = ""
+class RSSMatchRequest(BaseModel):
+    title: str
+    title_pattern: str = ""
+    exclude_pattern: str = ""
+    resolution: list[str] = []
+    release_group: list[str] = []
+    episode_range: Optional[list[int]] = None  # [start, end]
 
 
 class LLMCompleteRequest(BaseModel):
@@ -300,25 +298,46 @@ def sync_with_service(req: ServiceSyncRequest,
 
 @app.post("/rss/parse")
 def rss_parse(req: RSSParseRequest):
-    """Parse an RSS feed and return discovered torrents."""
+    """Parse an RSS feed and extract download links from all entries."""
     if not is_available("downloader"):
         raise HTTPException(400, "Feature 'downloader' not installed")
 
-    from core.rss.rule_parser import RSSRuleParser
-    parser = RSSRuleParser()
-    if req.rules:
-        parser.load_configurations(req.rules)
-    result = parser.parse_feed(req.url, [])
+    from core.rss.extractor import Extractor
+    extractor = Extractor()
+    entries = extractor.extract_feed(req.url)
 
-    entries = []
-    for title, (magnets, hashes, torrents) in result.items():
-        entries.append({
-            "title": title,
-            "magnet_links": magnets,
-            "info_hashes": hashes,
-            "torrent_links": torrents,
-        })
-    return {"feed_url": req.url, "entries": entries, "count": len(entries)}
+    return {
+        "feed_url": req.url,
+        "count": len(entries),
+        "entries": [
+            {
+                "title": e.title,
+                "magnet_links": e.magnet_links,
+                "info_hashes": e.info_hashes,
+                "torrent_links": e.torrent_links,
+            }
+            for e in entries
+        ],
+    }
+
+
+@app.post("/rss/match")
+def rss_match(req: RSSMatchRequest):
+    """Test if a title matches a rule."""
+    from core.rss.matcher import RuleMatcher
+    from core.interfaces.rss import MatchRule, FeedEntry
+
+    rule = MatchRule(
+        title_pattern=req.title_pattern,
+        exclude_pattern=req.exclude_pattern,
+        resolution=req.resolution,
+        release_group=req.release_group,
+        episode_range=tuple(req.episode_range) if req.episode_range else None,
+    )
+    matcher = RuleMatcher([rule])
+    entry = FeedEntry(title=req.title)
+
+    return {"title": req.title, "matches": matcher.matches(entry)}
 
 
 # --- Downloader ---

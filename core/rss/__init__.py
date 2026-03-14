@@ -1,79 +1,111 @@
+"""
+RSS feed monitor.
+
+Pipeline:
+    RSS Feed → Extractor (find download links)
+             → Matcher (should I download this?)
+             → Recognizer (parse the anime title)
+             → Queue (ready for downloader)
+"""
+
 import logging
 import time
 from enum import Enum
-from typing import TypedDict, Union
+from typing import TypedDict, Union, Optional
 
+from core.interfaces.rss.extractor import BaseExtractor, FeedEntry
+from core.interfaces.rss.matcher import BaseMatcher
 from core.interfaces.torrent.torrent import TorrentEvents
 from core.interfaces.torrent.torrent.torrent import TorrentInfo
 from core.collection.queue import NamedQueue, QueueManager
-from core.helper import recognition
 from core.helper.file import FileCacheManager
-from core.rss.rule_parser import RSSRuleParser
 
 
 class RSSDefault(Enum):
     CHECK_INTERVAL_SECOND = 600
-    EXCEPTION_TRACEBACK = "traceback.log"
     QUEUE = "default"
 
 
 class RSSConfig(TypedDict, total=False):
     check_interval_second: Union[int, float]
-    exception_traceback: bool
     queue: str
-    watch_list: dict[str, str]
+    watch_list: dict[str, str]  # {log_file_path: feed_url}
 
 
 class RSS:
     """
-    This class for manage RSS feed instance
+    Monitors RSS feeds and enqueues matching entries for download.
 
-    This thread is meant to be run in one instance. But it's possible to run multiple instances of this service.
+    Pipeline per entry:
+        1. Extractor finds download links (magnet, torrent, info_hash)
+        2. Matcher decides if this entry should be downloaded
+        3. Recognizer parses the anime title from the entry
+        4. Entry is enqueued for the downloader
+
+    Usage:
+        from core.rss import RSS
+        from core.rss.extractor import Extractor
+        from core.rss.matcher import RuleMatcher
+        from core.interfaces.rss import ExtractionRule, MatchRule
+
+        extractor = Extractor([
+            ExtractionRule(source="nyaa.si", magnet="link"),
+        ])
+
+        matcher = RuleMatcher([
+            MatchRule(title_pattern=r"Frieren", resolution=["1080p"]),
+        ])
+
+        rss = RSS(
+            extractor=extractor,
+            matcher=matcher,
+            queue_manager=queue_manager,
+            config={"watch_list": {"frieren.log": "https://nyaa.si/?page=rss&q=frieren"}},
+        )
+
+        rss.step()  # checks feeds if interval has elapsed
     """
+
     _logger = logging.getLogger(__name__)
 
     def __init__(self,
-                 rss_parser: RSSRuleParser,
+                 extractor: BaseExtractor,
+                 matcher: BaseMatcher,
                  queue_manager: QueueManager[TorrentInfo],
-                 config: RSSConfig):
-        """
-        :param rss_parser:
-        :param queue_dict Is the global queue_dict for use to get the correct queue name from this instance config:
-        """
-        self._logger.debug("RSS instance created.")
+                 config: RSSConfig,
+                 recognizer=None):
+        self._extractor = extractor
+        self._matcher = matcher
+        self._recognizer = recognizer
 
-        # Unpack config
-        self._check_interval_second = (config.get('check_interval_second',
-                                                  RSSDefault.CHECK_INTERVAL_SECOND.value)) * 1000
-        self.exception_traceback = config.get('exception_traceback',
-                                              RSSDefault.EXCEPTION_TRACEBACK.value)
+        # Config
+        self._check_interval_second = config.get(
+            'check_interval_second', RSSDefault.CHECK_INTERVAL_SECOND.value
+        )
         queue_name = str(config.get('queue', RSSDefault.QUEUE.value))
         self._queue = queue_manager.create_queue(queue_name)
         self._queue.add_dependent(self)
+
+        # Watch list: {FileCacheManager: feed_url}
         watch_list = config.get('watch_list', {})
-        self.watch_list: dict[FileCacheManager, str] = {FileCacheManager(file_name): link for file_name, link in
-                                                        watch_list.items()}
+        self.watch_list: dict[FileCacheManager, str] = {
+            FileCacheManager(log_path): url
+            for log_path, url in watch_list.items()
+        }
 
-        self.rss_parser: RSSRuleParser = rss_parser
-
-        # Setup internal constant
-        self._next_check = 0
+        self._next_check = 0.0
 
     @property
-    def check_interval_second(self):
-        return self._check_interval_second / 1000
+    def check_interval_second(self) -> float:
+        return self._check_interval_second
 
     @check_interval_second.setter
-    def check_interval_second(self, value):
-        self._check_interval_second = value * 1000
+    def check_interval_second(self, value: float):
+        self._check_interval_second = value
 
     @property
-    def queue(self):
+    def queue(self) -> NamedQueue:
         return self._queue
-
-    @property
-    def next_check(self):
-        return self._next_check
 
     @queue.setter
     def queue(self, value: NamedQueue):
@@ -81,41 +113,71 @@ class RSS:
         self._queue = value
         self._queue.add_dependent(self)
 
-    def to_dict(self):
+    @property
+    def next_check(self) -> float:
+        return self._next_check
 
+    def to_dict(self) -> RSSConfig:
         return RSSConfig(
             check_interval_second=self.check_interval_second,
-            exception_traceback=self.exception_traceback,
             queue=self.queue.name,
-            watch_list={file.get_file_path(): link for file, link in self.watch_list.items()}
+            watch_list={cache.get_file_path(): url for cache, url in self.watch_list.items()},
         )
 
-    def add_to_queue(self, links: dict, log_file: list):
-        for title, link in links.items():
-            if title in log_file:
-                continue
-
-            anime = recognition.parse(title, True)
-
-            self.validator(anime, link, log_file, title)
-
-    def check_feed(self):
-        for file_object, link in self.watch_list.items():
-            self._logger.debug(f"Checking {file_object.get_file_path()} for {link}")
-
-            log_file = file_object.read_file()
-
-            links = self.rss_parser.parse_feed(link, log_file)
-
-            self.add_to_queue(links, log_file)
-
     def step(self):
+        """Check feeds if the interval has elapsed."""
         if time.time() >= self._next_check:
-            self._logger.debug("Checking RSS feed.")
-            self.check_feed()
+            self._logger.debug("Checking RSS feeds.")
+            self.check_feeds()
             self._next_check = time.time() + self.check_interval_second
 
-    def validator(self, anime, link, file_log, title) -> None:
-        new_torrent = TorrentInfo(anime, link, file_log, title)
-        new_torrent.set_event(TorrentEvents.QUEUED)
-        self.queue.enqueue(new_torrent)
+    def check_feeds(self):
+        """Check all watched feeds."""
+        for cache, url in self.watch_list.items():
+            self._logger.debug(f"Checking {url}")
+            try:
+                seen = cache.read_file()
+            except FileNotFoundError:
+                seen = []
+
+            entries = self._extractor.extract_feed(url, seen)
+            for entry in entries:
+                self._process_entry(entry, cache)
+
+    def _process_entry(self, entry: FeedEntry, cache: FileCacheManager):
+        """Run an entry through the matcher → recognizer → queue pipeline."""
+        # Step 1: Should we download this?
+        if not self._matcher.matches(entry):
+            self._logger.debug(f"Skipped (matcher rejected): {entry.title}")
+            return
+
+        # Step 2: Recognize the anime title
+        parsed = {}
+        if self._recognizer:
+            try:
+                parsed = dict(self._recognizer.parse(entry.title))
+            except Exception as e:
+                self._logger.warning(f"Recognition failed for '{entry.title}': {e}")
+
+        # Step 3: Build URLs list
+        urls = entry.magnet_links + entry.torrent_links
+
+        if not urls and not entry.info_hashes:
+            self._logger.warning(f"No download links found for: {entry.title}")
+            return
+
+        # Step 4: Enqueue
+        self._enqueue(parsed, urls, entry, cache)
+
+    def _enqueue(self, parsed: dict, urls: list[str],
+                 entry: FeedEntry, cache: FileCacheManager):
+        """Create a TorrentInfo and add to queue."""
+        torrent = TorrentInfo(
+            anime=parsed,
+            url=urls,
+            log_file=[cache.get_file_path()],
+            title=entry.title,
+        )
+        torrent.set_event(TorrentEvents.QUEUED)
+        self._queue.enqueue(torrent)
+        self._logger.info(f"Enqueued: {entry.title}")

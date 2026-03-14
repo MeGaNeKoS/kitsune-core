@@ -1,15 +1,19 @@
+from __future__ import annotations
+
 import os
 import platform
 import subprocess
 import threading
 from abc import abstractmethod
 from enum import Enum
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 import psutil
 
 from core.interfaces.torrent.client.base import BaseClient
-from core.interfaces.torrent.torrent.torrent import TorrentInfo
+
+if TYPE_CHECKING:
+    from core.interfaces.torrent.torrent.torrent import TorrentInfo
 
 
 class Client(BaseClient):

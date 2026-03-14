@@ -5,11 +5,11 @@ Kitsune Core uses SQLAlchemy with SQLite as the default database. All models inh
 ## Schema Overview
 
 ```
-┌───────────────┐      ┌─────────────────────┐      ┌──────────────┐
+┌───────────────┐      ┌──────────────────────┐      ┌──────────────┐
 │  LocalMedia   │──1:N─│ ServiceMediaMapping  │      │ AnilistMedia │
 │  (source of   │      │ (correlates local    │      │ (cached API  │
 │   truth)      │      │  to service IDs)     │      │  data)       │
-└───────────────┘      └─────────────────────┘      └──────────────┘
+└───────────────┘      └──────────────────────┘      └──────────────┘
                                                           │
                                               ┌───────────┴──────────┐
                                               │                      │

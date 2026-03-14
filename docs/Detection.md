@@ -5,11 +5,11 @@ The detection module identifies running media players and extracts information a
 ## Architecture
 
 ```
-┌──────────────┐
+┌───────────────┐
 │ BaseDetector  │ (core/interfaces/detection/base.py)
-└──────┬───────┘
-       │
-  ┌────┴────────────┐
+└───────┬───────┘
+        │
+  ┌─────┴───────────┐
   │                 │
   ▼                 ▼
 ProcessDetector   WindowTitleDetector (future)

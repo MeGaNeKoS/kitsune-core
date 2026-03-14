@@ -5,9 +5,9 @@ The recognition module parses anime titles from filenames or raw text into struc
 ## Architecture
 
 ```
-┌──────────────┐
+┌───────────────┐
 │BaseRecognizer │ (core/interfaces/recognition/base.py)
-└──────┬───────┘
+└──────┬────────┘
        │
   ┌────┴─────┐
   │          │

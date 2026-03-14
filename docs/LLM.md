@@ -7,9 +7,9 @@ The LLM module provides integration with LLM endpoints for intelligent title par
 ## Architecture
 
 ```
-┌──────────────┐
+┌───────────────┐
 │ BaseLLMClient │ (core/interfaces/llm/base.py)
-└──────┬───────┘
+└──────┬────────┘
        │
   ┌────┴──────────────┐
   │                   │

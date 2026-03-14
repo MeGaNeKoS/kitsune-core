@@ -7,9 +7,9 @@ The downloader module handles RSS feed monitoring and torrent client management 
 ```
 RSS Feed ──► RSSRuleParser ──► Queue ──► Download Orchestrator ──► Torrent Client
                                               │
-                                         ┌────┴────┐
+                                         ┌────┴─────┐
                                          │BaseClient│
-                                         └────┬────┘
+                                         └────┬─────┘
                                               │
                                          QBittorrent
                                       (future: Transmission, Deluge)
