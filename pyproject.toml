@@ -29,6 +29,9 @@ downloader = [
 detection = [
     "psutil~=5.9.8",
 ]
+media = [
+    "pymediainfo>=6.0",
+]
 llm = [
     "httpx>=0.27",
 ]
@@ -37,7 +40,7 @@ server = [
     "fastapi>=0.111",
 ]
 all = [
-    "kitsune-core[tracker,recognition,downloader,detection,llm,server]",
+    "kitsune-core[tracker,recognition,downloader,detection,media,llm,server]",
 ]
 
 [tool.setuptools.packages.find]

@@ -87,6 +87,62 @@ TOOL_DEFINITIONS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_file_info",
+            "description": "Get filesystem-level metadata for a file: size, extension, path, existence, timestamps.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the file",
+                    },
+                },
+                "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_media_info",
+            "description": "Probe a media file for detailed technical metadata: video codec (HEVC/AVC/AV1), resolution, bitrate, bit depth, HDR, audio tracks (codec, channels, language), subtitle tracks, duration, container format.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the media file",
+                    },
+                },
+                "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_media_files",
+            "description": "List all media files (mkv, mp4, etc.) in a directory with their sizes.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "directory": {
+                        "type": "string",
+                        "description": "Directory path to scan",
+                    },
+                    "extensions": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "File extensions to include (default: mkv, mp4, avi, etc.)",
+                    },
+                },
+                "required": ["directory"],
+            },
+        },
+    },
 ]
 
 
@@ -123,10 +179,35 @@ def _build_tool_handlers() -> dict[str, Callable]:
         except Exception as e:
             return json.dumps({"error": str(e)})
 
+    def get_file_info(path: str) -> str:
+        try:
+            from core.media.filesystem import get_file_info as _get_file_info
+            return json.dumps(_get_file_info(path), default=str)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    def get_media_info(path: str) -> str:
+        try:
+            from core.media.probe import get_media_info as _get_media_info
+            return json.dumps(_get_media_info(path), default=str)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    def list_media_files(directory: str, extensions: list[str] = None) -> str:
+        try:
+            from core.media.filesystem import list_media_files as _list_media_files
+            results = _list_media_files(directory, extensions)
+            return json.dumps(results, default=str)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
     return {
         "search_anime": search_anime,
         "get_anime_details": get_anime_details,
         "parse_filename": parse_filename,
+        "get_file_info": get_file_info,
+        "get_media_info": get_media_info,
+        "list_media_files": list_media_files,
     }
 
 

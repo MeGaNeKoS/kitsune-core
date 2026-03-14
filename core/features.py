@@ -19,6 +19,7 @@ _FEATURE_MODULES = {
     "recognition": "aniparse",
     "downloader": "qbittorrentapi",
     "detection": "psutil",
+    "media": "pymediainfo",
     "llm": "httpx",
     "server": "fastapi",
 }
