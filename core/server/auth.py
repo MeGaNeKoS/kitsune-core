@@ -22,8 +22,9 @@ The /health endpoint is always accessible without auth.
 import logging
 from typing import Optional
 
-from fastapi import Request, HTTPException
+from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,9 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
             key = request.query_params.get("api_key", "")
 
         if key != _api_key:
-            raise HTTPException(status_code=401, detail="Invalid or missing API key")
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Invalid or missing API key"},
+            )
 
         return await call_next(request)
