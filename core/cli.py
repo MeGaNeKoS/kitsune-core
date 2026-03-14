@@ -217,6 +217,18 @@ def cmd_server_start(args):
     uvicorn.run(app, host=args.host, port=args.port)
 
 
+def cmd_daemon_start(args):
+    from core.features import require
+    require("server")
+    from core.daemon import start_daemon
+
+    print("Starting kitsune-core daemon...")
+    start_daemon(
+        config_path=args.config,
+        db=args.db if args.db != "sqlite:///kitsune.db" else None,
+    )
+
+
 # --- Parser ---
 
 def build_parser() -> argparse.ArgumentParser:
@@ -291,6 +303,12 @@ def build_parser() -> argparse.ArgumentParser:
     s_start.add_argument("--port", type=int, default=8000)
     s_start.add_argument("--api-key", help="Require API key for all requests")
 
+    # --- daemon ---
+    dmn = sub.add_parser("daemon", help="Run as background daemon")
+    dmn_sub = dmn.add_subparsers(dest="daemon_cmd")
+    d_start = dmn_sub.add_parser("start", help="Start daemon")
+    d_start.add_argument("--config", default="kitsune.toml", help="Config file path")
+
     # --- features ---
     sub.add_parser("features", help="List installed features")
 
@@ -334,6 +352,11 @@ def main():
             cmd_server_start(args)
         else:
             parser.parse_args(["server", "--help"])
+    elif args.command == "daemon":
+        if args.daemon_cmd == "start":
+            cmd_daemon_start(args)
+        else:
+            parser.parse_args(["daemon", "--help"])
     else:
         parser.print_help()
 

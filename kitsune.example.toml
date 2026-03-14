@@ -1,0 +1,61 @@
+# Kitsune Core daemon configuration
+# Copy to kitsune.toml and edit to your needs.
+# Run with: kitsune daemon start --config kitsune.toml
+
+[daemon]
+db = "sqlite:///kitsune.db"
+api_key = ""  # leave empty to disable auth
+
+[server]
+host = "0.0.0.0"  # 127.0.0.1 for local only
+port = 8000
+
+# --- RSS Feed Monitoring ---
+
+[rss]
+check_interval = 600  # seconds between checks
+
+# Add feeds to monitor
+[[rss.feeds]]
+url = "https://nyaa.si/?page=rss&q=frieren+1080p"
+log = "frieren.log"
+
+# [[rss.feeds]]
+# url = "https://nyaa.si/?page=rss&q=dandadan+1080p"
+# log = "dandadan.log"
+
+# Download rules (OR logic — any rule matching triggers download)
+[[rss.rules]]
+title_pattern = "Frieren"
+resolution = ["1080p"]
+release_group = ["SubsPlease", "Erai-raws"]
+# exclude_pattern = "batch"
+# episode_range = [1, 28]
+
+# [[rss.rules]]
+# title_pattern = "Dandadan"
+# resolution = ["1080p"]
+
+# --- Service Sync ---
+
+[sync]
+enabled = false
+interval = 3600  # seconds between syncs
+service = "anilist"  # anilist, mal, kitsu
+user_id = ""
+access_token = ""
+
+# --- LLM ---
+
+[llm]
+provider = "openrouter"  # openai, gemini, openrouter
+model = "nvidia/nemotron-3-super-120b-a12b:free"
+# api_key = ""  # or set in .env as LLM_API_KEY / OPENROUTER_API_KEY
+
+# --- Quality Upgrade ---
+
+[upgrade]
+enabled = false
+resolution = "FHD"  # SD, HD, FHD, QHD, UHD
+codec = "HEVC"       # AVC, HEVC, AV1
+threshold = 5        # minimum score improvement to trigger upgrade
