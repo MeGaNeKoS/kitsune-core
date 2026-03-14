@@ -15,7 +15,7 @@ Usage:
 from importlib.util import find_spec
 
 _FEATURE_MODULES = {
-    "tracker": "anisearch",
+    "tracker": "Anisearch",
     "recognition": "aniparse",
     "downloader": "qbittorrentapi",
     "detection": "psutil",

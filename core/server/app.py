@@ -5,7 +5,6 @@ Exposes core functionality (tracker, recognition, downloader, LLM)
 to remote clients like browser extensions and desktop apps.
 """
 
-from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Depends
@@ -95,6 +94,21 @@ class ServiceSyncRequest(BaseModel):
     service: str = "anilist"
     user_id: str = ""
     access_token: str = ""
+
+
+class RSSFeedAddRequest(BaseModel):
+    url: str
+    name: str  # log file identifier
+
+
+class RSSParseRequest(BaseModel):
+    url: str
+    rules: Optional[dict] = None
+
+
+class DownloadAddRequest(BaseModel):
+    urls: list[str]  # magnet links or torrent URLs
+    title: str = ""
 
 
 class LLMCompleteRequest(BaseModel):
@@ -280,6 +294,45 @@ def sync_with_service(req: ServiceSyncRequest,
     sync = SyncManager()
     result = sync.sync_from_service(tracker, service, req.user_id)
     return result
+
+
+# --- RSS ---
+
+@app.post("/rss/parse")
+def rss_parse(req: RSSParseRequest):
+    """Parse an RSS feed and return discovered torrents."""
+    if not is_available("downloader"):
+        raise HTTPException(400, "Feature 'downloader' not installed")
+
+    from core.rss.rule_parser import RSSRuleParser
+    parser = RSSRuleParser()
+    if req.rules:
+        parser.load_configurations(req.rules)
+    result = parser.parse_feed(req.url, [])
+
+    entries = []
+    for title, (magnets, hashes, torrents) in result.items():
+        entries.append({
+            "title": title,
+            "magnet_links": magnets,
+            "info_hashes": hashes,
+            "torrent_links": torrents,
+        })
+    return {"feed_url": req.url, "entries": entries, "count": len(entries)}
+
+
+# --- Downloader ---
+
+@app.get("/downloader/status")
+def downloader_status():
+    """Get current downloader status."""
+    if not is_available("downloader"):
+        raise HTTPException(400, "Feature 'downloader' not installed")
+
+    return {
+        "available": True,
+        "message": "Downloader feature is available. Configure a client to start downloading.",
+    }
 
 
 # --- Detection ---

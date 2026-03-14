@@ -1,4 +1,5 @@
 import logging
+import warnings
 
 from devlog import log_on_error
 
@@ -7,18 +8,17 @@ from core.features import require
 require("recognition")
 import aniparse
 
+warnings.warn(
+    "core.helper.recognition is deprecated. Use core.recognition.get_recognizer() instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
 
 @log_on_error(logging.ERROR, "Failed to parse title: {error!r}")
-def parse(file_name, track):
+def parse(file_name, track=False):
     """
-    Parse file name and return a dict of parsed result
+    Parse file name and return a dict of parsed result.
+    Deprecated: use core.recognition.get_recognizer('aniparse').parse() instead.
     """
-    # TODO: update this once the aniparse finished
-    if track:
-        anime = aniparse.parse(file_name)
-    else:
-        anime, _ = aniparse.parse(file_name, False)
-    if anime.get("anilist", 0) == 0:
-        anime["anime_type"] = "unknown"
-
-    return anime
+    return aniparse.parse(file_name) or {}
