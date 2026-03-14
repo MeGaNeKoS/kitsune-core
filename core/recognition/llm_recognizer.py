@@ -36,10 +36,11 @@ _SYSTEM = (
 class LLMRecognizer(BaseRecognizer):
     _name = "llm"
 
-    def __init__(self, llm_client: BaseLLMClient = None, **kwargs):
+    def __init__(self, llm_client: BaseLLMClient = None,
+                 llm_provider: str = "openai", **kwargs):
         if llm_client is None:
             from core.llm import get_llm_client
-            llm_client = get_llm_client(**kwargs)
+            llm_client = get_llm_client(llm_provider, **kwargs)
         self._llm = llm_client
 
     @log_on_error(logging.ERROR, "LLM recognition failed: {error!r}")
