@@ -96,20 +96,43 @@ class RuleMatcher(BaseMatcher):
 
 class LLMMatcher(BaseMatcher):
     """
-    LLM-based matcher. Sends the entry title + a natural language rule
-    to an LLM and uses its yes/no response to decide.
+    Agentic LLM-based matcher with tool calling.
+
+    The LLM can call tools to look up anime metadata, parse filenames,
+    and gather information before deciding whether to download.
+
+    Simple rules (just title matching) are answered directly.
+    Complex rules (check score on AniList, verify studio, etc.) trigger
+    tool calls automatically.
 
     Usage:
         from core.llm import get_llm_client
 
+        # Simple rule — LLM answers directly
         matcher = LLMMatcher(
             rule=LLMMatchRule(
-                prompt="Download only 1080p releases from trusted groups. "
-                       "Skip batch releases and re-encodes."
+                prompt="Download only 1080p releases from SubsPlease"
+            ),
+            llm_client=get_llm_client(),
+        )
+
+        # Complex rule — LLM calls tools to check
+        matcher = LLMMatcher(
+            rule=LLMMatchRule(
+                prompt="Download only if the anime has score > 8 on AniList "
+                       "and is currently airing"
             ),
             llm_client=get_llm_client(),
         )
     """
+
+    _SYSTEM = (
+        "You are a download rule evaluator for an anime tracker.\n"
+        "You have tools to search anime databases and parse filenames.\n"
+        "Use them when the rule requires checking external data "
+        "(scores, studios, airing status, etc.).\n"
+        "After gathering all needed information, answer with ONLY 'yes' or 'no'."
+    )
 
     def __init__(self, rule: LLMMatchRule, llm_client=None, **kwargs):
         self._rule = rule
@@ -119,19 +142,24 @@ class LLMMatcher(BaseMatcher):
         self._llm = llm_client
 
     def matches(self, entry: FeedEntry) -> bool:
+        from core.llm.agent import LLMAgent
+
+        agent = LLMAgent(self._llm)
         prompt = (
-            f"Given this download rule:\n"
-            f"{self._rule.prompt}\n\n"
-            f"Should this entry be downloaded?\n"
-            f"Title: {entry.title}\n\n"
-            f"Answer with ONLY 'yes' or 'no'."
+            f"Rule: {self._rule.prompt}\n\n"
+            f"Entry title: {entry.title}\n\n"
+            f"Should this entry be downloaded? "
+            f"Use tools if needed, then answer 'yes' or 'no'."
         )
+
         try:
-            response = self._llm.complete(
-                prompt,
-                system="You are a download rule evaluator. Answer only 'yes' or 'no'.",
-            )
-            answer = response["content"].strip().lower()
+            result = agent.run(prompt, system=self._SYSTEM)
+            answer = result["content"].strip().lower()
+            if result["tool_calls_made"]:
+                logger.info(
+                    f"LLM matcher used {len(result['tool_calls_made'])} tool call(s) "
+                    f"for '{entry.title}'"
+                )
             return answer in ("yes", "y", "true")
         except Exception as e:
             logger.error(f"LLM matcher failed, defaulting to reject: {e}")

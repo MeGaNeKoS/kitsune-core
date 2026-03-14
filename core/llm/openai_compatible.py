@@ -82,3 +82,25 @@ class OpenAICompatibleClient(BaseLLMClient):
 
         response = self.complete(prompt, **{**kwargs, **extra})
         return json.loads(response["content"])
+
+    @log_on_error(logging.ERROR, "LLM tool call failed: {error!r}",
+                  sanitize_params={"api_key"})
+    def complete_with_tools(self, messages: list[dict], tools: list[dict],
+                            **kwargs) -> dict:
+        payload = {
+            "model": kwargs.pop("model", self._model),
+            "messages": messages,
+            "tools": tools,
+            **kwargs,
+        }
+
+        with httpx.Client(timeout=self._timeout) as client:
+            response = client.post(
+                f"{self._base_url}/chat/completions",
+                headers=self._headers(),
+                json=payload,
+            )
+            response.raise_for_status()
+            data = response.json()
+
+        return data["choices"][0]["message"]

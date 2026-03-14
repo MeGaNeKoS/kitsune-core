@@ -39,3 +39,22 @@ class BaseLLMClient(ABC):
         Optionally provide a JSON schema for structured output.
         """
         ...
+
+    @abstractmethod
+    def complete_with_tools(self, messages: list[dict], tools: list[dict],
+                            **kwargs) -> dict:
+        """
+        Send a completion request with tool/function definitions.
+        Returns the raw response including any tool_calls.
+
+        Args:
+            messages: Chat messages [{"role": "user", "content": "..."}]
+            tools: OpenAI-format tool definitions
+            **kwargs: Extra params (model, temperature, etc.)
+
+        Returns:
+            The assistant message dict, which may contain:
+            - "content": text response (if no tool call)
+            - "tool_calls": list of tool calls to execute
+        """
+        ...
