@@ -36,6 +36,22 @@ class OpenAICompatibleClient(BaseLLMClient):
             headers["Authorization"] = f"Bearer {self._api_key}"
         return headers
 
+    def list_models(self) -> list[str]:
+        """Fetch available models from the provider's /models endpoint."""
+        try:
+            with httpx.Client(timeout=self._timeout) as client:
+                response = client.get(
+                    f"{self._base_url}/models",
+                    headers=self._headers(),
+                )
+                response.raise_for_status()
+                data = response.json()
+            models = data.get("data", [])
+            return sorted(m.get("id", "") for m in models if m.get("id"))
+        except Exception as e:
+            logger.error(f"Failed to list models: {e}")
+            return []
+
     @log_on_error(logging.ERROR, "LLM completion failed: {error!r}",
                   sanitize_params={"api_key"})
     def complete(self, prompt: str, system: Optional[str] = None,

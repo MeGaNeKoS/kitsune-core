@@ -25,6 +25,10 @@ class BaseLLMClient(ABC):
     def get_name(cls) -> str:
         return cls._name
 
+    def list_models(self) -> list[str]:
+        """Return available model IDs from the provider. Override if needed."""
+        return []
+
     @abstractmethod
     def complete(self, prompt: str, system: Optional[str] = None,
                  **kwargs) -> LLMResponse:
