@@ -46,6 +46,7 @@ def get_mpc_playback(port: int = 13579) -> Optional[dict]:
             "duration": int(duration) if duration else 0,
             "state": state_map.get(state_str, state_str.lower()),
             "file": file_name,
+            "file_path": extract("filepath"),
             "position_str": extract("positionstring"),
             "duration_str": extract("durationstring"),
         }
