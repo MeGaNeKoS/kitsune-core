@@ -7,6 +7,9 @@ class DetectedMedia(TypedDict, total=False):
     pid: int
     title: Optional[str]  # extracted window/media title
     file_path: Optional[str]
+    position: Optional[int]  # playback position in milliseconds
+    duration: Optional[int]  # total duration in milliseconds
+    state: Optional[str]  # "playing", "paused", "stopped"
 
 
 class BaseDetector(ABC):
