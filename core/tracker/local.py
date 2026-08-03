@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from core.interfaces.tracker.local import BaseLocalTracker
 from core.interfaces.database.models.Media.local_media import LocalMedia
 from core.interfaces.database.models.Media.service_mapping import ServiceMediaMapping
+from core.interfaces.database.models.Media.title_alias import TitleAlias
 from core.interfaces.database.types.media import MediaType, MediaStatus
 from core.interfaces.database.const.service import ServiceName
 
@@ -99,6 +100,12 @@ class LocalTracker(BaseLocalTracker):
         entry = self._session.get(LocalMedia, media_id)
         if not entry:
             return False
+        # TitleAlias is intentionally not modeled as an ORM relationship, so
+        # remove it explicitly with the local entry. Otherwise deleted media
+        # can continue to resolve future detections to a nonexistent ID.
+        aliases = self._session.query(TitleAlias).filter_by(local_media_id=media_id).all()
+        for alias in aliases:
+            self._session.delete(alias)
         self._session.delete(entry)
         self._session.commit()
         return True

@@ -1,4 +1,5 @@
 from core.tracker import get_local_tracker
+from core.interfaces.database.models.Media.title_alias import TitleAlias
 from core.interfaces.database.types.media import MediaType, MediaStatus
 
 
@@ -64,6 +65,16 @@ def test_delete_entry(session):
     entry = tracker.add_entry("Frieren")
     assert tracker.delete_entry(entry["id"])
     assert not tracker.delete_entry(entry["id"])  # already deleted
+
+
+def test_delete_entry_removes_recognition_aliases(session):
+    tracker = get_local_tracker(session)
+    entry = tracker.add_entry("Frieren")
+    session.add(TitleAlias(normalized_title="frier", local_media_id=entry["id"]))
+    session.commit()
+
+    assert tracker.delete_entry(entry["id"])
+    assert session.query(TitleAlias).filter_by(normalized_title="frier").first() is None
 
 
 def test_list_with_filter(session):
