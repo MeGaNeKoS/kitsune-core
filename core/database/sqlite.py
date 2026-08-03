@@ -1,7 +1,7 @@
 import logging
 
 from devlog import log_on_start, log_on_error
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker, scoped_session
 
 from core.interfaces.database.base import Base
@@ -36,6 +36,31 @@ class DatabaseConnection:
     def create_tables(self):
         # Create tables in the database for all models defined in Base
         Base.metadata.create_all(bind=self._engine)
+        self._migrate_sqlite_schema()
+
+    def _migrate_sqlite_schema(self):
+        """Apply additive SQLite migrations needed by the current models.
+
+        ``create_all`` intentionally does not alter existing tables. Keep the
+        small, lossless migrations here so every core entry point (desktop,
+        CLI, and server) opens an older local database safely.
+        """
+        if self._engine.dialect.name != "sqlite":
+            return
+        inspector = inspect(self._engine)
+        if "LocalMedia" not in inspector.get_table_names():
+            return
+        columns = {column["name"] for column in inspector.get_columns("LocalMedia")}
+        additions = {
+            "rewatching": "BOOLEAN NOT NULL DEFAULT 0",
+            "rewatch_count": "INTEGER NOT NULL DEFAULT 0",
+        }
+        with self._engine.begin() as connection:
+            for name, definition in additions.items():
+                if name not in columns:
+                    connection.execute(text(
+                        f'ALTER TABLE "LocalMedia" ADD COLUMN "{name}" {definition}'
+                    ))
 
     def get_session(self):
         # Get a new session for interacting with the database

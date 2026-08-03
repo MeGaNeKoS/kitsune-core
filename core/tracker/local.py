@@ -30,6 +30,8 @@ class LocalTracker(BaseLocalTracker):
             "score": entry.score,
             "start_date": entry.start_date,
             "end_date": entry.end_date,
+            "rewatching": entry.rewatching,
+            "rewatch_count": entry.rewatch_count,
             "notes": entry.notes,
             "file_path": entry.file_path,
             "created_at": entry.created_at,

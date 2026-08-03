@@ -96,3 +96,15 @@ def test_update_entry(session):
     updated = tracker.update_entry(entry["id"], score=9.5, notes="Amazing")
     assert updated["score"] == 9.5
     assert updated["notes"] == "Amazing"
+
+
+def test_rewatch_fields_round_trip(session):
+    tracker = get_local_tracker(session)
+    entry = tracker.add_entry("Frieren", rewatching=True, rewatch_count=2)
+
+    assert entry["rewatching"] is True
+    assert entry["rewatch_count"] == 2
+
+    updated = tracker.update_entry(entry["id"], rewatching=False, rewatch_count=3)
+    assert updated["rewatching"] is False
+    assert updated["rewatch_count"] == 3
