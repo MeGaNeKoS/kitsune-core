@@ -1,6 +1,6 @@
 import time
 
-from sqlalchemy import Column, Integer, String, Float, Text, Enum, event
+from sqlalchemy import Boolean, Column, Integer, String, Float, Text, Enum, event
 from sqlalchemy.orm import relationship, Session
 
 from core.interfaces.database.base import Base
@@ -20,6 +20,8 @@ class LocalMedia(Base):
     score = Column(Float, nullable=True)
     start_date = Column(Integer, nullable=True)  # unix timestamp
     end_date = Column(Integer, nullable=True)  # unix timestamp
+    rewatching = Column(Boolean, nullable=False, default=False)
+    rewatch_count = Column(Integer, nullable=False, default=0)
     notes = Column(Text, nullable=True)
     file_path = Column(String, unique=True, nullable=True)
     created_at = Column(Integer, nullable=False, default=lambda: int(time.time()))
