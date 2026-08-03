@@ -11,3 +11,8 @@ class TableNames(enum.Enum):
     ServiceCreds = "ServiceCreds"
     ServiceMediaMapping = "ServiceMediaMapping"
     LocalMedia = "LocalMedia"
+    TitleAlias = "TitleAlias"
+    MALMedia = "MALMedia"
+    MALUser = "MALUser"
+    KitsuMedia = "KitsuMedia"
+    KitsuUser = "KitsuUser"

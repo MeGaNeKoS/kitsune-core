@@ -348,11 +348,12 @@ class AnilistClient:
 
     _save_media_list_entries = f'''
     mutation (
-        $id: Int, 
-        $status: MediaListStatus, 
-        $score: Float, 
-        $scoreRaw: Int, 
-        $progress: Int, 
+        $id: Int,
+        $mediaId: Int,
+        $status: MediaListStatus,
+        $score: Float,
+        $scoreRaw: Int,
+        $progress: Int,
         $progressVolumes: Int, 
         $repeat: Int, 
         $priority: Int,
@@ -365,7 +366,8 @@ class AnilistClient:
         $completedAt: FuzzyDateInput
         ) {{
         SaveMediaListEntry(
-            id: $id, 
+            id: $id,
+            mediaId: $mediaId,
             status: $status,
             score: $score,
             scoreRaw: $scoreRaw,

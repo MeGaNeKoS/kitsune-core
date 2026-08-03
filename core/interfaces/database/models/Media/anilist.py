@@ -83,7 +83,8 @@ class AnilistMedia(Base):
     popularity = Column(Integer)
     isLocked = Column(Boolean)
     trending = Column(Integer)
-    # tags, relations, characters, staff, studios, etc., need to be defined if they are special types or relationships
+    tags = Column(JSON)      # [{"name": str, "rank": int, "category": str}, ...]
+    studios = Column(JSON)   # [{"name": str, "isMain": bool}, ...]
     isFavouriteBlocked = Column(Boolean, nullable=False, default=False)
     isAdult = Column(Boolean)
     # nextAiringEpisode, airingSchedule, trends, etc., need to be defined if they are special types or relationships
@@ -134,6 +135,19 @@ class AnilistMedia(Base):
     bannerImage
     genres
     synonyms
+    tags {{
+        name
+        rank
+        category
+    }}
+    studios {{
+        edges {{
+            isMain
+            node {{
+                name
+            }}
+        }}
+    }}
     averageScore
     meanScore
     popularity
@@ -152,6 +166,29 @@ class AnilistMedia(Base):
 }}
 {AnilistMediaTitle.fragment()}
 {AnilistAiringSchedule.fragment()}""".strip()
+
+    @staticmethod
+    def _parse_tags(raw) -> list | None:
+        if not isinstance(raw, list):
+            return None
+        return [{"name": t["name"], "rank": t.get("rank", 0), "category": t.get("category", "")}
+                for t in raw if isinstance(t, dict) and t.get("name")]
+
+    @staticmethod
+    def _parse_studios(raw) -> list | None:
+        if not isinstance(raw, dict):
+            return None
+        edges = raw.get("edges", [])
+        if not isinstance(edges, list):
+            return None
+        result = []
+        for edge in edges:
+            if not isinstance(edge, dict):
+                continue
+            node = edge.get("node", {})
+            if isinstance(node, dict) and node.get("name"):
+                result.append({"name": node["name"], "isMain": bool(edge.get("isMain", False))})
+        return result or None
 
     @classmethod
     def parse_data(cls, data: dict) -> Tuple['AnilistMedia', 'AnilistMediaTitle', 'AnilistAiringSchedule']:
@@ -182,10 +219,12 @@ class AnilistMedia(Base):
                     hashtag=data.get('hashtag'),
                     trailer=data.get('trailer'),
                     updatedAt=data.get('updatedAt'),
-                    coverImages=data.get('coverImage'),
+                    coverImage=data.get('coverImage'),
                     bannerImage=data.get('bannerImage'),
                     genres=data.get('genres'),
                     synonyms=data.get('synonyms'),
+                    tags=cls._parse_tags(data.get('tags')),
+                    studios=cls._parse_studios(data.get('studios')),
                     averageScore=data.get('averageScore'),
                     meanScore=data.get('meanScore'),
                     popularity=data.get('popularity'),

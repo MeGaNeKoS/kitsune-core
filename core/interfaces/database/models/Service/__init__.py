@@ -5,6 +5,8 @@ from core.interfaces.database.base import Base
 from core.interfaces.database.const.service import ServiceName
 from core.interfaces.database.const.table_name import TableNames
 from core.interfaces.database.models.Service.anilist import AnilistUserEntry
+from core.interfaces.database.models.Service.mal import MALUserEntry
+from core.interfaces.database.models.Service.kitsu import KitsuUserEntry
 
 
 class ServiceCreds(Base):
@@ -27,10 +29,26 @@ class ServiceCreds(Base):
                                    backref=backref('user', uselist=False, viewonly=True),
                                    )
 
+    mal_entries = relationship(MALUserEntry, uselist=True, lazy='select', viewonly=True,
+                               primaryjoin=and_(identifier == foreign(MALUserEntry.user_id),
+                                                service_name == ServiceName.MYANIMELIST),
+                               backref=backref('user', uselist=False, viewonly=True),
+                               )
+
+    kitsu_entries = relationship(KitsuUserEntry, uselist=True, lazy='select', viewonly=True,
+                                 primaryjoin=and_(identifier == foreign(KitsuUserEntry.user_id),
+                                                  service_name == ServiceName.KITSU),
+                                 backref=backref('user', uselist=False, viewonly=True),
+                                 )
+
     @property
     def entries(self):
         if self.service_name == ServiceName.ANILIST:
             return self.anilist_entries
+        if self.service_name == ServiceName.MYANIMELIST:
+            return self.mal_entries
+        if self.service_name == ServiceName.KITSU:
+            return self.kitsu_entries
         return None
 
     @staticmethod
@@ -40,10 +58,14 @@ class ServiceCreds(Base):
             This required due to we cant set a cascade delete when we only part of the composite PK on the Entry table.
             And storing both of them as FK would be redundant, and storage inefficient.
         """
-        if target.service_name == ServiceName.ANILIST:
-            with Session(bind=connection) as session:
+        with Session(bind=connection) as session:
+            if target.service_name == ServiceName.ANILIST:
                 session.query(AnilistUserEntry).filter_by(user_id=target.identifier).delete()
-                session.commit()
+            elif target.service_name == ServiceName.MYANIMELIST:
+                session.query(MALUserEntry).filter_by(user_id=target.identifier).delete()
+            elif target.service_name == ServiceName.KITSU:
+                session.query(KitsuUserEntry).filter_by(user_id=target.identifier).delete()
+            session.commit()
 
 
 event.listen(ServiceCreds, 'after_delete', ServiceCreds.after_delete_listener)
