@@ -1,4 +1,8 @@
-from core.rss.extractor import Extractor, _resolve_field
+from unittest.mock import patch
+
+import pytest
+
+from core.rss.extractor import Extractor, FeedExtractionError, _resolve_field
 from core.interfaces.rss import ExtractionRule, FeedEntry
 
 
@@ -75,3 +79,45 @@ class TestExtractor:
         assert result.magnet_links == []
         assert result.torrent_links == []
         assert result.info_hashes == []
+
+    @pytest.mark.parametrize(
+        ("status", "category", "message"),
+        [
+            (401, "authentication", "authentication"),
+            (429, "rate_limit", "rate limit"),
+            (503, "server", "server unavailable"),
+        ],
+    )
+    def test_http_feed_failures_are_categorized(self, status, category, message):
+        feed = {"status": status, "entries": []}
+        with patch("core.rss.extractor.feedparser.parse", return_value=feed):
+            with pytest.raises(FeedExtractionError) as raised:
+                Extractor().extract_feed("https://example.com/feed.xml")
+
+        assert raised.value.category == category
+        assert message in str(raised.value)
+
+    def test_malformed_feed_is_not_reported_as_empty(self):
+        feed = {
+            "bozo": 1,
+            "bozo_exception": ValueError("not well formed"),
+            "entries": [],
+        }
+        with patch("core.rss.extractor.feedparser.parse", return_value=feed):
+            with pytest.raises(FeedExtractionError) as raised:
+                Extractor().extract_feed("https://example.com/feed.xml")
+
+        assert raised.value.category == "malformed"
+
+    def test_timed_out_feed_is_categorized(self):
+        feed = {
+            "bozo": 1,
+            "bozo_exception": TimeoutError("request timed out"),
+            "entries": [],
+        }
+        with patch("core.rss.extractor.feedparser.parse", return_value=feed):
+            with pytest.raises(FeedExtractionError) as raised:
+                Extractor().extract_feed("https://example.com/feed.xml")
+
+        assert raised.value.category == "timeout"
+        assert "timed out" in str(raised.value)

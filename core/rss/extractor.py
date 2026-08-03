@@ -28,6 +28,14 @@ _TORRENT_RE = re.compile(r"(https?://[^\"']+?\.torrent)")
 _HASH_RE = re.compile(r"(?<!/)\b([a-fA-F0-9]{40}|[a-fA-F0-9]{64})\b(?!/)")
 
 
+class FeedExtractionError(RuntimeError):
+    """A safe, user-facing category for an RSS fetch or parse failure."""
+
+    def __init__(self, category: str, message: str):
+        super().__init__(message)
+        self.category = category
+
+
 def _resolve_field(data: dict, path: str):
     """
     Resolve a dot-separated field path against a dict.
@@ -86,6 +94,33 @@ class Extractor(BaseExtractor):
     def extract_feed(self, url: str, seen: list[str] = None) -> list[FeedEntry]:
         seen = seen or []
         feed = feedparser.parse(url)
+        status = feed.get("status")
+        if isinstance(status, int) and status >= 400:
+            if status in (401, 403):
+                raise FeedExtractionError(
+                    "authentication", f"Feed authentication failed (HTTP {status})"
+                )
+            if status == 429:
+                raise FeedExtractionError(
+                    "rate_limit", "Feed rate limit reached (HTTP 429)"
+                )
+            if status >= 500:
+                raise FeedExtractionError(
+                    "server", f"Feed server unavailable (HTTP {status})"
+                )
+            raise FeedExtractionError(
+                "http", f"Feed request failed (HTTP {status})"
+            )
+
+        if feed.get("bozo") and not feed.get("entries"):
+            exception = feed.get("bozo_exception")
+            detail = str(exception).lower() if exception else ""
+            if "timed out" in detail or "timeout" in detail:
+                raise FeedExtractionError("timeout", "Feed request timed out")
+            raise FeedExtractionError(
+                "malformed", "Feed is malformed or unreadable"
+            )
+
         source = urlparse(url).hostname or ""
 
         results = []
