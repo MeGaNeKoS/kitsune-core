@@ -1,4 +1,5 @@
 import atexit
+import html
 import json
 import logging
 import threading
@@ -125,7 +126,11 @@ class AnilistAuthClient:
     @log_on_start(logging.INFO, "Starting AniList auth server...")
     @log_on_error(logging.ERROR, "AniList auth server failed: {error!r}",
                   sanitize_params={"client_secret", "code"})
-    def start_auth_server(cls, code_callback: Callable[[str], None]) -> threading.Thread:
+    def start_auth_server(
+        cls,
+        code_callback: Callable[[str | None], None],
+        error_callback: Callable[[str, str], None] | None = None,
+    ) -> threading.Thread:
         """
         Starts a local server to listen for the OAuth callback and extract the authorization code.
 
@@ -160,7 +165,10 @@ class AnilistAuthClient:
                 try:
                     parsed_uri = urlparse(cls.REDIRECT_URI)
                     server_address = (parsed_uri.hostname, parsed_uri.port)
-                    httpd = HTTPServer(server_address, cls._make_handler(code_callback))
+                    httpd = HTTPServer(
+                        server_address,
+                        cls._make_handler(code_callback, error_callback),
+                    )
                     cls._server_instance = httpd
                     server_started.set()
                     httpd.serve_forever()
@@ -203,7 +211,11 @@ class AnilistAuthClient:
                 cls._server_instance = None
 
     @classmethod
-    def _make_handler(cls, code_callback: Callable[[str], None]):
+    def _make_handler(
+        cls,
+        code_callback: Callable[[str | None], None],
+        error_callback: Callable[[str, str], None] | None = None,
+    ):
         """
         Creates a factory for request handlers to process OAuth authentication callbacks.
 
@@ -227,14 +239,27 @@ class AnilistAuthClient:
                     query = urlparse(self.path).query
                     params = parse_qs(query)
                     code = params.get('code', [None])[0]
+                    error = params.get('error', [None])[0]
+                    description = params.get('error_description', [""])[0]
 
-                    if code:
+                    if error:
+                        if error_callback:
+                            error_callback(error, description)
+                        else:
+                            code_callback(None)
+                    elif code:
                         code_callback(code)
 
                     self.send_response(200)
                     self.send_header('Content-Type', 'text/html')
                     self.end_headers()
-                    self.wfile.write("Authentication successful. You may now close this window.".encode('utf-8'))
+                    if error:
+                        message = "Authentication was not completed. You may now close this window."
+                    elif code:
+                        message = "Authentication successful. You may now close this window."
+                    else:
+                        message = "Authentication callback was incomplete. You may now close this window."
+                    self.wfile.write(html.escape(message).encode('utf-8'))
 
                     threading.Thread(target=self.server.shutdown).start()
 
