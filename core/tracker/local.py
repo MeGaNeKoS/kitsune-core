@@ -4,12 +4,12 @@ from typing import Optional
 from devlog import log_on_error
 from sqlalchemy.orm import Session
 
-from core.interfaces.tracker.local import BaseLocalTracker
+from core.interfaces.database.const.service import ServiceName
 from core.interfaces.database.models.Media.local_media import LocalMedia
 from core.interfaces.database.models.Media.service_mapping import ServiceMediaMapping
 from core.interfaces.database.models.Media.title_alias import TitleAlias
-from core.interfaces.database.types.media import MediaType, MediaStatus
-from core.interfaces.database.const.service import ServiceName
+from core.interfaces.database.types.media import MediaStatus, MediaType
+from core.interfaces.tracker.local import BaseLocalTracker
 
 logger = logging.getLogger(__name__)
 
@@ -122,17 +122,36 @@ class LocalTracker(BaseLocalTracker):
                      service_media_id: str) -> dict:
         self._get_entry_or_raise(media_id)  # verify exists
         svc = ServiceName(service_name)
+        remote_id = str(service_media_id).strip()
+        if not remote_id:
+            raise ValueError("Service media ID cannot be empty")
+
+        # A remote entry must have one local owner per service.  The table's
+        # existing constraint only protects one mapping per local row, so this
+        # boundary check is also required to prevent pull/relink flows from
+        # silently moving the same remote ID between local entries.
+        duplicate = self._session.query(ServiceMediaMapping).filter(
+            ServiceMediaMapping.service_name == svc,
+            ServiceMediaMapping.service_media_id == remote_id,
+            ServiceMediaMapping.local_media_id != media_id,
+        ).first()
+        if duplicate:
+            raise ValueError(
+                f"{svc.value} media {remote_id} is already linked to local entry "
+                f"{duplicate.local_media_id}"
+            )
+
         # Check for existing mapping
         existing = self._session.query(ServiceMediaMapping).filter_by(
             local_media_id=media_id, service_name=svc
         ).first()
         if existing:
-            existing.service_media_id = service_media_id
+            existing.service_media_id = remote_id
         else:
             existing = ServiceMediaMapping(
                 local_media_id=media_id,
                 service_name=svc,
-                service_media_id=service_media_id,
+                service_media_id=remote_id,
             )
             self._session.add(existing)
         self._session.commit()
