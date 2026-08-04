@@ -122,6 +122,20 @@ class LocalTracker(BaseLocalTracker):
                      service_media_id: str) -> dict:
         self._get_entry_or_raise(media_id)  # verify exists
         svc = ServiceName(service_name)
+        service_media_id = str(service_media_id)
+        # A remote list entry must have one local owner. Without this
+        # boundary, pulling or manually linking the same remote ID to a
+        # second local title silently creates ambiguous push/delete targets.
+        duplicate = self._session.query(ServiceMediaMapping).filter(
+            ServiceMediaMapping.service_name == svc,
+            ServiceMediaMapping.service_media_id == service_media_id,
+            ServiceMediaMapping.local_media_id != media_id,
+        ).first()
+        if duplicate:
+            raise ValueError(
+                f"{service_name} media ID {service_media_id} is already linked "
+                f"to local entry {duplicate.local_media_id}"
+            )
         # Check for existing mapping
         existing = self._session.query(ServiceMediaMapping).filter_by(
             local_media_id=media_id, service_name=svc
