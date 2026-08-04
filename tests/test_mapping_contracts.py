@@ -4,6 +4,7 @@ import pytest
 
 from core.interfaces.database.models.Media.kitsu import KitsuMedia
 from core.interfaces.database.models.Media.mal import MALMedia
+from core.interfaces.database.models.Media.anilist import AnilistMedia
 from core.tracker import get_local_tracker
 
 
@@ -57,3 +58,17 @@ def test_kitsu_media_from_api_preserves_titles_and_images(session):
     assert media.cover_image["large"].endswith("cover.jpg")
     assert media.episode_count == 10
     assert media.average_rating == 82.5
+
+
+def test_anilist_media_preserves_tags_and_studios(session):
+    media = AnilistMedia(
+        id=789,
+        tags=[{"name": "Fantasy", "rank": 90}],
+        studios=[{"name": "Fixture Studio", "isMain": True}],
+    )
+    session.add(media)
+    session.commit()
+
+    stored = session.get(AnilistMedia, 789)
+    assert stored.tags == [{"name": "Fantasy", "rank": 90}]
+    assert stored.studios == [{"name": "Fixture Studio", "isMain": True}]
