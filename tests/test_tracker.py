@@ -1,6 +1,7 @@
-from core.tracker import get_local_tracker
+import pytest
 from core.interfaces.database.models.Media.title_alias import TitleAlias
-from core.interfaces.database.types.media import MediaType, MediaStatus
+from core.interfaces.database.types.media import MediaStatus, MediaType
+from core.tracker import get_local_tracker
 
 
 def test_add_entry(session):
@@ -50,6 +51,24 @@ def test_link_service(session):
     assert len(mappings) == 2
     services = {m["service_name"] for m in mappings}
     assert services == {"AniList", "MyAnimeList"}
+
+
+def test_link_service_rejects_duplicate_remote_id(session):
+    tracker = get_local_tracker(session)
+    first = tracker.add_entry("Frieren")
+    second = tracker.add_entry("Frieren (duplicate)")
+    tracker.link_service(first["id"], "AniList", "154587")
+
+    with pytest.raises(ValueError, match="already linked"):
+        tracker.link_service(second["id"], "AniList", "154587")
+
+
+def test_link_service_rejects_empty_remote_id(session):
+    tracker = get_local_tracker(session)
+    entry = tracker.add_entry("Frieren")
+
+    with pytest.raises(ValueError, match="cannot be empty"):
+        tracker.link_service(entry["id"], "AniList", "  ")
 
 
 def test_unlink_service(session):
