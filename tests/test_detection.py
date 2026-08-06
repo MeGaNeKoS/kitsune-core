@@ -27,6 +27,27 @@ def test_process_detector_custom_players():
     assert "custom_player" in detector._players
 
 
+@pytest.mark.parametrize(
+    ("player", "window_title"),
+    [
+        ("mpc-hc", "Media Player Classic Home Cinema"),
+        ("vlc", "VLC media player"),
+        ("mpv", "mpv"),
+    ],
+)
+def test_window_title_detector_ignores_idle_player_titles(player, window_title):
+    from core.detection.window import WindowTitleDetector
+
+    assert WindowTitleDetector._extract_media_title(window_title, player) is None
+
+
+def test_window_title_detector_keeps_loaded_media_title():
+    from core.detection.window import WindowTitleDetector
+
+    title = "Show - 01.mkv - Media Player Classic Home Cinema"
+    assert WindowTitleDetector._extract_media_title(title, "mpc-hc") == "Show - 01.mkv"
+
+
 def test_detector_factory_error():
     with pytest.raises(ValueError, match="not found"):
         from core.detection import get_detector

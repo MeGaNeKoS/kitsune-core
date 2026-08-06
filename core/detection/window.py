@@ -23,6 +23,18 @@ KNOWN_PLAYERS = {
     "kodi": ["kodi", "kodi.exe"],
 }
 
+# A visible player window is not proof that media is loaded. These are the
+# titles produced by an idle player instance; they must not become fake media
+# records in the application.
+_PLAYER_ONLY_TITLES = {
+    "mpv": {"mpv"},
+    "vlc": {"vlc media player", "vlc"},
+    "mpc-hc": {"media player classic home cinema", "mpc-hc"},
+    "mpc-be": {"media player classic black edition", "mpc-be"},
+    "potplayer": {"potplayer", "potplayer mini"},
+    "kodi": {"kodi"},
+}
+
 
 def _get_windows_with_pids() -> list[dict]:
     """Enumerate all visible windows with their titles and PIDs using Win32 API."""
@@ -125,6 +137,8 @@ class WindowTitleDetector(BaseDetector):
             if player:
                 # Extract media title from window title
                 media_title = self._extract_media_title(title, player)
+                if media_title is None:
+                    continue
                 results.append(DetectedMedia(
                     player=player,
                     pid=pid,
@@ -143,6 +157,10 @@ class WindowTitleDetector(BaseDetector):
         Most players use format: "filename - PlayerName" or "PlayerName - filename"
         """
         if not window_title:
+            return None
+
+        normalized_title = " ".join(window_title.casefold().split())
+        if normalized_title in _PLAYER_ONLY_TITLES.get(player, set()):
             return None
 
         # Common patterns:
